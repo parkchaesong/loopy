@@ -2,6 +2,7 @@ import option
 import os
 import shutil
 import utils_map
+import size_ap
 import glob
 opt = option.options
 
@@ -40,7 +41,9 @@ else:
 
 class_dict = utils_map.make_gt_list(gt_json_path)
 
-gt_counter_per_class, counter_images_per_class = utils_map.get_gt_lists(gt_json_path, TEMP_FILES_PATH, class_dict)
+gt_counter_per_class, counter_images_per_class, gt_counter_per_size, counter_images_per_size \
+    = utils_map.get_gt_lists(gt_json_path, TEMP_FILES_PATH, class_dict)
+
 
 gt_classes = list(class_dict.values())
 # sort classes alphabetically
@@ -52,8 +55,13 @@ if opt.set_class_iou is not None:
     utils_map.check_format_class_iou(opt, gt_classes)
 
 det_counter_per_classes = utils_map.dr_json(dr_json_path, TEMP_FILES_PATH, class_dict)
-count_true_positives = utils_map.calculate_ap(TEMP_FILES_PATH, results_files_path, gt_classes, opt,
-                                              gt_counter_per_class, counter_images_per_class)
+
+if opt.no_size_ap:
+    count_true_positives = size_ap.calculate_ap(TEMP_FILES_PATH, results_files_path, gt_classes, opt,
+                                                gt_counter_per_class, counter_images_per_class)
+else:
+    count_true_positives, size_count_true_positives \
+        = size_ap.calculate_ap(TEMP_FILES_PATH, results_files_path, gt_classes, opt, gt_counter_per_class, gt_counter_per_size)
 
 shutil.rmtree(TEMP_FILES_PATH)
 

@@ -5,6 +5,9 @@ import glob
 import sys
 import json
 import pandas as pd
+import option
+
+opt = option.options
 
 '''
 def log_average_miss_rate(precision, fp_cumsum, num_images):
@@ -192,33 +195,58 @@ def get_gt_lists(GT_PATH, TEMP_FILES_PATH, class_dict):
         gt_counter_per_class = {}
         counter_images_per_classes = {}
         json_annotations = json_data["annotations"]
+
+        gt_counter_per_size = {}
+        counter_images_per_size = {}
+
+        size_threshold = opt.size_threshold
+        size_class_dict = {}
+        size_class_dict["small"] = 0
+        size_class_dict["medium"] = size_threshold
+        size_class_dict["large"] = 3 * size_threshold
+
         json_annotations = sorted(json_annotations, key=lambda json_annotations: (json_annotations['image_id']))
         df = pd.DataFrame(json_annotations)
         file_id = str(df["image_id"][0])
         bounding_boxes = []
         already_seen_classes = []
+        already_seen_sizes = []
         for idx, row in df.iterrows():
             # gt 파일명에 따라 이 부분 수정해야 함
             new_file_id = str(row["image_id"])
             category_id = row["category_id"]
             class_name = class_dict[str(category_id)]
-
             if new_file_id != file_id:
                 with open(TEMP_FILES_PATH + "/" + file_id+"_ground_truth.json", "w") as outfile:
                     json.dump(bounding_boxes, outfile)
                 bounding_boxes = []
-
             # create gt dictionary
             left, top, width, height = str(row["bbox"][0]), str(row["bbox"][1]), str(row["bbox"][2]), str(
                 row["bbox"][3])
             bbox = left + " " + top + " " + width + " " + height
-            bounding_boxes.append({"class_name": class_name, "bbox": bbox, "used":False})
+            area = row["bbox"][2] * row["bbox"][3]
+            if area <= size_threshold * size_threshold:
+                size_name = "small"
+            elif size_threshold*size_threshold < area <= 3 * size_threshold*size_threshold:
+                size_name = "medium"
+            elif area > 3 * size_threshold * size_threshold:
+                size_name = "large"
+            else:
+                ValueError
+            bounding_boxes.append({"class_name": class_name,
+                                   "size_name": size_name, "bbox": bbox, "used":False, "size_used": False})
             # count that object in all data set
             if class_name in gt_counter_per_class:
                 gt_counter_per_class[class_name] += 1
             else:
                 # if class did not exits yet
                 gt_counter_per_class[class_name] = 1
+
+            if size_name in gt_counter_per_size:
+                gt_counter_per_size[size_name] += 1
+            else:
+                gt_counter_per_size[size_name] = 1
+
             if class_name not in already_seen_classes:
                 # 하나의 image 안에서 각 클래스가 몇번 나왔는지 계산
                 if class_name in counter_images_per_classes:
@@ -227,12 +255,18 @@ def get_gt_lists(GT_PATH, TEMP_FILES_PATH, class_dict):
                     # if class did not exist yet
                     counter_images_per_classes[class_name] = 1
                 already_seen_classes.append(class_name)
+
+            if size_name not in already_seen_sizes:
+                if size_name in counter_images_per_size:
+                    counter_images_per_size[size_name] +=1
+                else:
+                    counter_images_per_size[size_name] = 1
+                already_seen_sizes.append(size_name)
             file_id = str(row['image_id'])
         with open(TEMP_FILES_PATH + "/" + file_id + "_ground_truth.json", "w") as outfile:
             json.dump(bounding_boxes, outfile)
 
-    return gt_counter_per_class, counter_images_per_classes
-
+    return gt_counter_per_class, counter_images_per_classes, gt_counter_per_size, counter_images_per_size
 
 def check_format_class_iou(opt, gt_classes):
     n_args = len(opt.set_class_iou)
@@ -293,6 +327,7 @@ def dr_json(dr_json_path, temp_file_path, class_dict):
                 json.dump(bounding_boxes, outfile)
 
     return det_counter_per_classes
+
 
 '''
 def load_dr_into_json(GT_PATH, dr_files_list, TEMP_FILE_PATH, class_dict):
