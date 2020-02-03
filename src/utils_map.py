@@ -5,48 +5,9 @@ import glob
 import sys
 import json
 import pandas as pd
+import option
 
-'''
-def log_average_miss_rate(precision, fp_cumsum, num_images):
-    """
-        log-average miss rate:
-            Calculated by averaging miss rates at 9 evenly spaced FPPI points
-            between 10e-2 and 10e0, in log-space.
-        output:
-                lamr | log-average miss rate
-                mr | miss rate
-                fppi | false positives per image
-        references:
-            [1] Dollar, Piotr, et al. "Pedestrian Detection: An Evaluation of the
-               State of the Art." Pattern Analysis and Machine Intelligence, IEEE
-               Transactions on 34.4 (2012): 743 - 761.
-    """
-
-    # if there was no detections of that class
-    if precision.size == 0:
-        lamr = 0
-        mr = 1
-        fppi = 0  # detect한 것이 없으니 false positive도 0
-        return lamr, mr, fppi
-
-    fppi = fp_cumsum/float(num_images)
-    mr = 1 - precision
-
-    fppi_tmp = np.insert(fppi, 0, -1.0)
-    mr_tmp = np.insert(mr, 0, 1.0)
-
-    # Use 9 evenly spaced reference points in log-space
-    ref = np.logspace(-2.0, 0.0, num=9)
-    for i, ref_i in enumerate(ref):
-        # np.where() will always find at least 1 index, since min(ref) = 0.01 and min(fppi_tmp) = -1.0
-        j = np.where(fppi_tmp <= ref_i)[-1][-1]
-        ref[i] = mr_tmp[j]
-
-    # log(0) is undefined, so we use the np.maximum(1e-10, ref)
-    lamr = math.exp(np.mean(np.log(np.maximum(1e-10, ref))))
-
-    return lamr, mr, fppi
-'''
+opt = option.options
 
 def calc_interpolated_prec(desired_rec, latest_pre, rec, prec):
     recall_precision = np.array([rec, prec])
@@ -182,43 +143,59 @@ def adjust_axes(r, t, fig, axes):
     x_lim = axes.get_xlim()
     axes.set_xlim([x_lim[0], x_lim[1]*propotion])
 '''
-#def get_gt_lists_ver2(gt_path, dr_path, temp_files_path, opt):
-
-
-
-def get_gt_lists(GT_PATH, TEMP_FILES_PATH, class_dict):
-    with open(GT_PATH) as json_file:
+def get_gt_match(gt_path, temp_files_path, class_dict):
+    with open(gt_path) as json_file:
         json_data = json.load(json_file)
-        gt_counter_per_class = {}
-        counter_images_per_classes = {}
+        gt_counter_per_classes = {}
+        counter_images_per_classes ={}
         json_annotations = json_data["annotations"]
-        json_annotations = sorted(json_annotations, key=lambda json_annotations: (json_annotations['image_id']))
+
+        gt_counter_per_sizes = {}
+        counter_images_per_sizes = {}
+
+        size_threshold = opt.size_threshold
+        size_class =["small", "medium", "large"]
+
+        json_annotations = sorted(json_annotations, key=lambda json_annotations:(json_annotations["image_id"]))
         df = pd.DataFrame(json_annotations)
-        file_id = str(df["image_id"][0])
+
         bounding_boxes = []
         already_seen_classes = []
+        already_seen_sizes = []
+
         for idx, row in df.iterrows():
-            # gt 파일명에 따라 이 부분 수정해야 함
-            new_file_id = str(row["image_id"])
+
+            file_id = str(row["image_id"])
+            gt_id = str(row["id"])
             category_id = row["category_id"]
             class_name = class_dict[str(category_id)]
-
-            if new_file_id != file_id:
-                with open(TEMP_FILES_PATH + "/" + file_id+"_ground_truth.json", "w") as outfile:
-                    json.dump(bounding_boxes, outfile)
-                bounding_boxes = []
-
-            # create gt dictionary
             left, top, width, height = str(row["bbox"][0]), str(row["bbox"][1]), str(row["bbox"][2]), str(
                 row["bbox"][3])
             bbox = left + " " + top + " " + width + " " + height
-            bounding_boxes.append({"class_name": class_name, "bbox": bbox, "used":False})
-            # count that object in all data set
-            if class_name in gt_counter_per_class:
-                gt_counter_per_class[class_name] += 1
+            area = row["area"]
+
+            if area <= (size_threshold)^2:
+                size_name = "small"
+            elif (size_threshold)^2 < area <= (3*size_threshold)^2:
+                size_name = "medium"
+            elif area > (3*size_threshold):
+                size_name = "large"
+            else:
+                ValueError("Check the area")
+
+            bounding_boxes.append({"file_id": file_id, "class_name":class_name, "size_name":size_name, "bbox": bbox, "used": False,
+                                   "size_used": False})
+            if class_name in gt_counter_per_classes:
+                gt_counter_per_classes[class_name] +=1
             else:
                 # if class did not exits yet
-                gt_counter_per_class[class_name] = 1
+                gt_counter_per_classes[class_name] = 1
+
+            if size_name in gt_counter_per_sizes:
+                gt_counter_per_sizes[size_name] += 1
+            else:
+                gt_counter_per_sizes[size_name] = 1
+
             if class_name not in already_seen_classes:
                 # 하나의 image 안에서 각 클래스가 몇번 나왔는지 계산
                 if class_name in counter_images_per_classes:
@@ -227,11 +204,97 @@ def get_gt_lists(GT_PATH, TEMP_FILES_PATH, class_dict):
                     # if class did not exist yet
                     counter_images_per_classes[class_name] = 1
                 already_seen_classes.append(class_name)
-            file_id = str(row['image_id'])
-        with open(TEMP_FILES_PATH + "/" + file_id + "_ground_truth.json", "w") as outfile:
+
+            if size_name not in already_seen_sizes:
+                if size_name in counter_images_per_sizes:
+                    counter_images_per_sizes[size_name] +=1
+                else:
+                    counter_images_per_sizes[size_name] = 1
+                already_seen_sizes.append(size_name)
+
+        with open(temp_files_path + '/gt_match.json', 'w') as outfile:
             json.dump(bounding_boxes, outfile)
 
-    return gt_counter_per_class, counter_images_per_classes
+    return gt_counter_per_classes, counter_images_per_classes, gt_counter_per_sizes, counter_images_per_sizes
+
+def get_gt_lists_old(GT_PATH, TEMP_FILES_PATH, class_dict):
+    with open(GT_PATH) as json_file:
+        json_data = json.load(json_file)
+        gt_counter_per_class = {}
+        counter_images_per_classes = {}
+        json_annotations = json_data["annotations"]
+
+        gt_counter_per_size = {}
+        counter_images_per_size = {}
+
+        size_threshold = opt.size_threshold
+        size_class_dict = {}
+        size_class_dict["small"] = 0
+        size_class_dict["medium"] = size_threshold
+        size_class_dict["large"] = 3 * size_threshold
+
+        json_annotations = sorted(json_annotations, key=lambda json_annotations: (json_annotations['image_id']))
+        df = pd.DataFrame(json_annotations)
+        file_id = str(df["image_id"][0])
+        bounding_boxes = []
+        already_seen_classes = []
+        already_seen_sizes = []
+        for idx, row in df.iterrows():
+            # gt 파일명에 따라 이 부분 수정해야 함
+            new_file_id = str(row["image_id"])
+            category_id = row["category_id"]
+            class_name = class_dict[str(category_id)]
+            if new_file_id != file_id:
+                with open(TEMP_FILES_PATH + "/" + file_id+"_ground_truth.json", "w") as outfile:
+                    json.dump(bounding_boxes, outfile)
+                bounding_boxes = []
+            # create gt dictionary
+            left, top, width, height = str(row["bbox"][0]), str(row["bbox"][1]), str(row["bbox"][2]), str(
+                row["bbox"][3])
+            bbox = left + " " + top + " " + width + " " + height
+            area = row["bbox"][2] * row["bbox"][3]
+            if area <= size_threshold * size_threshold:
+                size_name = "small"
+            elif size_threshold*size_threshold < area <= (3 * size_threshold) ^ 2:
+                size_name = "medium"
+            elif area > (3 * size_threshold) ^ 2:
+                size_name = "large"
+            else:
+                ValueError
+            bounding_boxes.append({"class_name": class_name,
+                                   "size_name": size_name, "bbox": bbox, "used":False, "size_used": False})
+            # count that object in all data set
+            if class_name in gt_counter_per_class:
+                gt_counter_per_class[class_name] += 1
+            else:
+                # if class did not exits yet
+                gt_counter_per_class[class_name] = 1
+
+            if size_name in gt_counter_per_size:
+                gt_counter_per_size[size_name] += 1
+            else:
+                gt_counter_per_size[size_name] = 1
+
+            if class_name not in already_seen_classes:
+                # 하나의 image 안에서 각 클래스가 몇번 나왔는지 계산
+                if class_name in counter_images_per_classes:
+                    counter_images_per_classes[class_name] += 1
+                else:
+                    # if class did not exist yet
+                    counter_images_per_classes[class_name] = 1
+                already_seen_classes.append(class_name)
+
+            if size_name not in already_seen_sizes:
+                if size_name in counter_images_per_size:
+                    counter_images_per_size[size_name] +=1
+                else:
+                    counter_images_per_size[size_name] = 1
+                already_seen_sizes.append(size_name)
+            file_id = str(row['image_id'])
+        with open(TEMP_FILES_PATH + "/gt_match.json", "w") as outfile:
+            json.dump(bounding_boxes, outfile)
+
+    return gt_counter_per_class, counter_images_per_classes, gt_counter_per_size, counter_images_per_size
 
 
 def check_format_class_iou(opt, gt_classes):
@@ -294,6 +357,7 @@ def dr_json(dr_json_path, temp_file_path, class_dict):
 
     return det_counter_per_classes
 
+
 '''
 def load_dr_into_json(GT_PATH, dr_files_list, TEMP_FILE_PATH, class_dict):
     for class_index, class_name in enumerate(class_dict):
@@ -326,6 +390,7 @@ def load_dr_into_json(GT_PATH, dr_files_list, TEMP_FILE_PATH, class_dict):
             json.dump(bounding_boxes, outfile)
 '''
 
+
 def compute_pre_rec(fp, tp, class_name, gt_counter_per_class):
     cumsum = 0
     for idx, val in enumerate(fp):
@@ -346,7 +411,101 @@ def compute_pre_rec(fp, tp, class_name, gt_counter_per_class):
     return rec, prec
 
 
-def calculate_ap(TEMP_FILE_PATH, results_files_path, gt_classes, opt,
+def calculate_ap(temp_file_path, results_file_path, gt_classes, opt, gt_counter_per_class, counter_images_per_class):
+
+    specific_iou_flagged = False
+    if opt.set_class_iou is not None:
+        specific_iou_flagged = True
+
+    sum_AP = 0.0
+    ap_dictionary = {}
+    # lamr_dictionary = {}
+    # open file to store the results
+    with open(results_file_path + "/results.txt", 'w') as results_file:
+        results_file.write("# AP and precision/recall per class \n")
+        count_true_positives = {}
+
+        for class_indeex, class_name in enumerate(gt_classes):
+            count_true_positives[class_name] =0
+
+            dr_file = temp_file_path + '/' + class_name + '_dr.json'
+            dr_data = json.load(open(dr_file))
+
+            nd = len(dr_data)
+            tp = [0] *nd
+            fp = [0] * nd
+            gt_file = temp_file_path + '/gt_match.json'
+
+            for idx, detection in enumerate(dr_data):
+                file_id = detection["file_id"]
+                ground_truth_data = json.load((open(gt_file)))
+                ovmax = -1
+                gt_match = -1
+                bb = [float(x) for x in detection["bbox"].split()]
+                for obj in ground_truth_data:
+                    if not obj["file_id"] == file_id:
+                        pass
+                    else:
+                        if obj["class_name"] == class_name:
+                            bbgt = [float(x) for x in obj["bbox"].split()]
+                            bi = [max(bb[0], bbgt[0]), max(bb[1], bbgt[1]), min(bb[0] + bb[2], bbgt[0] + bbgt[2]),
+                                  min(bb[1] + bb[3], bbgt[1] + bbgt[3])]
+                            iw = bi[2] - bi[0] + 1
+                            ih = bi[3] - bi[1] + 1
+                            if iw > 0 and ih > 0:
+                                # ua = compute overlap (IoU) = area of intersection/ area of union
+                                ua = ((bb[2] + 1) * (bb[3] + 1) + (bbgt[2] + 1) * (bbgt[3] + 1)) - iw * ih
+                                IoU = iw * ih / ua
+                                if IoU > ovmax:
+                                    ovmax = IoU
+                                    gt_match = obj
+
+                iou_threshold = opt.iou_threshold
+                if specific_iou_flagged:
+                    specific_iou_classes = opt.set_class_iou[::2]
+                    iou_list = opt.set_class_iou[1::2]
+                    if class_name in specific_iou_classes:
+                        index = specific_iou_classes.index(class_name)
+                        IoU_threshold = float(iou_list[index])
+                if ovmax >= iou_threshold:
+                    if not bool(gt_match["used"]):
+                        tp[idx] = 1
+                        gt_match["used"] = True
+                        count_true_positives[class_name] +=1
+                        with open(gt_file, 'w') as f:
+                            f.write(json.dumps(ground_truth_data))
+                    else:
+                        fp[idx] = 1
+                else:
+                    fp[idx] = 1
+
+            rec, prec = compute_pre_rec(fp, tp, class_name, gt_counter_per_class)
+            if opt.no_interpolation:
+                ap, mrec, mprec = voc_ap(rec[:], prec[:])
+            else:
+                ap = calc_inter_ap(opt, rec[:], prec[:])
+            # ap, mrec, mprec = voc_ap(rec[:], prec[:])
+            sum_AP += ap
+            text = "{0:.2f}%".format(
+                ap * 100) + " = " + class_name + " AP "  # class_name + " AP = {0:.2f}%".format(ap*100)
+            rounded_prec = ['%.2f' % elem for elem in prec]
+            rounded_rec = ['%.2f' % elem for elem in rec]
+            results_file.write(
+                text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n\n")
+
+            if not opt.quiet:
+                print(text)
+            ap_dictionary[class_name] = ap
+
+        results_file.write("\n# mAP of all classes\n")
+        mAP = sum_AP / len(gt_classes)
+        text = "mAP = {0:.2f}%".format(mAP * 100)
+        results_file.write(text + "\n")
+        print(text)
+    return count_true_positives
+
+
+def calculate_ap_old(TEMP_FILE_PATH, results_files_path, gt_classes, opt,
                  gt_counter_per_class, counter_images_per_class):
 
     specific_iou_flagged = False
@@ -449,10 +608,6 @@ def calculate_ap(TEMP_FILE_PATH, results_files_path, gt_classes, opt,
             if not opt.quiet:
                 print(text)
             ap_dictionary[class_name] = ap
-
-            # n_images = counter_images_per_class[class_name]
-            # lamr, mr, fppi = log_average_miss_rate(np.array(rec), np.array(fp), n_images)
-            # lamr_dictionary[class_name] = lamr
 
         results_file.write("\n# mAP of all classes\n")
         mAP = sum_AP / len(gt_classes)
