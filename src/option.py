@@ -1,15 +1,27 @@
 import easydict
 
+gt_json_path = 'C:/Users/장용원/Desktop/sphinx/sphinx/test.json'
+dr_json_path = 'C:/Users/장용원/Desktop/sphinx/sphinx/output.json'
+
 options = easydict.EasyDict({
+        "gt_json_path": gt_json_path,
+        "dr_json_path": dr_json_path,
+
         "iou_threshold": 0.5,
         "size_threshold": 32,
         "confidence_threshold": 0.3,
+
         "n_interpolation": 11,
         "no_interpolation": False,  # just use pascal voc 2007
+
         "ignore": None,
         "set_class_iou": None,  # 특정 클래스에 대해 특정 iou 설정, ex: person 0.7
         "quiet": True,
-        "no_size_ap" : True
+
+        "see_pre_rec": False,
+
+        "draw_plot": True,
+        "plot_save": True
     })
 
 

@@ -1,11 +1,24 @@
 import numpy as np
-import time
-import sys
+import matplotlib.pyplot as plt
+import sys, os
 import json
 import pandas as pd
 import option
 
 opt = option.options
+
+
+def print_configuration(result, conf):
+    with open(result, 'a') as result:
+        result.write("\n## Show Configuration ##")
+        result.write("\nGround Truth Json file path: " + conf.gt_json_path + "\n")
+        result.write("Detection Result Json file path: " + conf.dr_json_path + "\n")
+        result.write("IoU threshold is " + str(conf.iou_threshold) +
+                     ". Detection results under threshold are counted as FP.\n")
+        result.write("Confidence Threshold is "+ str(conf.confidence_threshold) +
+                     ". Detection results under threshold are not counted.\n")
+    return
+
 
 def calc_interpolated_prec(desired_rec, latest_pre, rec, prec):
     recall_precision = np.array([rec, prec])
@@ -166,15 +179,13 @@ def get_gt_match(gt_path, class_dict):
     already_seen_sizes = []
     gt_class = {}
 
+    for key, value in class_dict.items():
+        gt_class[value] = []
     with open(gt_path) as json_file:
         json_data = json.load(json_file)
         json_annotations = json_data["annotations"]
-
         json_annotations = sorted(json_annotations, key=lambda json_annotations: (json_annotations["category_id"]))
         df = pd.DataFrame(json_annotations)
-
-        for key, value in class_dict.items():
-            gt_class[value] = []
 
         for idx, row in df.iterrows():
             image_id = str(row["image_id"])
@@ -219,155 +230,6 @@ def get_gt_match(gt_path, class_dict):
 
     return gt_counter_per_classes, counter_images_per_classes, gt_counter_per_sizes, counter_images_per_sizes, gt_class
 
-def get_gt_match_old(gt_path, temp_files_path, class_dict):
-    with open(gt_path) as json_file:
-        json_data = json.load(json_file)
-        gt_counter_per_classes = {}
-        counter_images_per_classes ={}
-        json_annotations = json_data["annotations"]
-
-        gt_counter_per_sizes = {}
-        counter_images_per_sizes = {}
-
-        size_threshold = opt.size_threshold
-
-        json_annotations = sorted(json_annotations, key=lambda json_annotations:(json_annotations["category_id"]))
-        df = pd.DataFrame(json_annotations)
-        category_id = str(df["category_id"][0])
-        class_name = class_dict[str(category_id)]
-        bounding_boxes = []
-        already_seen_classes = []
-        already_seen_sizes = []
-
-        for idx, row in df.iterrows():
-            file_id = str(row["image_id"])
-            new_category_id = row["category_id"]
-            if new_category_id != category_id:
-                with open(temp_files_path + "/" + class_name+"_ground_truth.json", "w") as outfile:
-                    json.dump(bounding_boxes, outfile)
-                bounding_boxes = []
-            left, top, width, height = str(row["bbox"][0]), str(row["bbox"][1]), str(row["bbox"][2]), str(
-                row["bbox"][3])
-            bbox = left + " " + top + " " + width + " " + height
-            area = row["area"]
-
-            size_name = area_check(area, size_threshold)
-
-            if class_name in gt_counter_per_classes:
-                gt_counter_per_classes[class_name] +=1
-            else:
-                # if class did not exits yet
-                gt_counter_per_classes[class_name] = 1
-
-            if size_name in gt_counter_per_sizes:
-                gt_counter_per_sizes[size_name] += 1
-            else:
-                gt_counter_per_sizes[size_name] = 1
-
-            if class_name not in already_seen_classes:
-                # 하나의 image 안에서 각 클래스가 몇번 나왔는지 계산
-                if class_name in counter_images_per_classes:
-                    counter_images_per_classes[class_name] += 1
-                else:
-                    # if class did not exist yet
-                    counter_images_per_classes[class_name] = 1
-                already_seen_classes.append(class_name)
-
-            if size_name not in already_seen_sizes:
-                if size_name in counter_images_per_sizes:
-                    counter_images_per_sizes[size_name] +=1
-                else:
-                    counter_images_per_sizes[size_name] = 1
-                already_seen_sizes.append(size_name)
-
-            bounding_boxes.append({"file_id": file_id, "class_name":class_name, "area": area,
-                                   "size_name":size_name, "bbox": bbox, "used": False, "size_used": False})
-            category_id = row["category_id"]
-            class_name = class_dict[str(category_id)]
-        with open(temp_files_path + "/" + class_name + "_ground_truth.json", "w") as outfile:
-            json.dump(bounding_boxes, outfile)
-
-    return gt_counter_per_classes, counter_images_per_classes, gt_counter_per_sizes, counter_images_per_sizes
-
-def get_gt_lists_old(GT_PATH, TEMP_FILES_PATH, class_dict):
-    with open(GT_PATH) as json_file:
-        json_data = json.load(json_file)
-        gt_counter_per_class = {}
-        counter_images_per_classes = {}
-        json_annotations = json_data["annotations"]
-
-        gt_counter_per_size = {}
-        counter_images_per_size = {}
-
-        size_threshold = opt.size_threshold
-        size_class_dict = {}
-        size_class_dict["small"] = 0
-        size_class_dict["medium"] = size_threshold
-        size_class_dict["large"] = 3 * size_threshold
-
-        json_annotations = sorted(json_annotations, key=lambda json_annotations: (json_annotations['image_id']))
-        df = pd.DataFrame(json_annotations)
-        file_id = str(df["image_id"][0])
-        bounding_boxes = []
-        already_seen_classes = []
-        already_seen_sizes = []
-        for idx, row in df.iterrows():
-            # gt 파일명에 따라 이 부분 수정해야 함
-            new_file_id = str(row["image_id"])
-            category_id = row["category_id"]
-            class_name = class_dict[str(category_id)]
-            if new_file_id != file_id:
-                with open(TEMP_FILES_PATH + "/" + file_id+"_ground_truth.json", "w") as outfile:
-                    json.dump(bounding_boxes, outfile)
-                bounding_boxes = []
-            # create gt dictionary
-            left, top, width, height = str(row["bbox"][0]), str(row["bbox"][1]), str(row["bbox"][2]), str(
-                row["bbox"][3])
-            bbox = left + " " + top + " " + width + " " + height
-            area = row["bbox"][2] * row["bbox"][3]
-            if area <= size_threshold * size_threshold:
-                size_name = "small"
-            elif size_threshold*size_threshold < area <= (3 * size_threshold) ^ 2:
-                size_name = "medium"
-            elif area > (3 * size_threshold) ^ 2:
-                size_name = "large"
-            else:
-                ValueError
-            bounding_boxes.append({"class_name": class_name,
-                                   "size_name": size_name, "bbox": bbox, "used":False, "size_used": False})
-            # count that object in all data set
-            if class_name in gt_counter_per_class:
-                gt_counter_per_class[class_name] += 1
-            else:
-                # if class did not exits yet
-                gt_counter_per_class[class_name] = 1
-
-            if size_name in gt_counter_per_size:
-                gt_counter_per_size[size_name] += 1
-            else:
-                gt_counter_per_size[size_name] = 1
-
-            if class_name not in already_seen_classes:
-                # 하나의 image 안에서 각 클래스가 몇번 나왔는지 계산
-                if class_name in counter_images_per_classes:
-                    counter_images_per_classes[class_name] += 1
-                else:
-                    # if class did not exist yet
-                    counter_images_per_classes[class_name] = 1
-                already_seen_classes.append(class_name)
-
-            if size_name not in already_seen_sizes:
-                if size_name in counter_images_per_size:
-                    counter_images_per_size[size_name] +=1
-                else:
-                    counter_images_per_size[size_name] = 1
-                already_seen_sizes.append(size_name)
-            file_id = str(row['image_id'])
-        with open(TEMP_FILES_PATH + "/gt_match.json", "w") as outfile:
-            json.dump(bounding_boxes, outfile)
-
-    return gt_counter_per_class, counter_images_per_classes, gt_counter_per_size, counter_images_per_size
-
 
 def check_format_class_iou(opt, gt_classes):
     n_args = len(opt.set_class_iou)
@@ -402,33 +264,6 @@ def make_gt_list(gt_json_path):
     return class_dict
 
 
-def dr_json_old(dr_json_path, temp_file_path, class_dict):
-    det_counter_per_classes = {}
-    with open(dr_json_path) as origin_dr_path:
-        json_data = json.load(origin_dr_path)
-        json_annotations = json_data["annotations"]
-        json_annotations = sorted(json_annotations, key=lambda json_annotations:(json_annotations['category_id']))
-        df = pd.DataFrame(json_annotations)
-        for key, value in class_dict.items():
-            bounding_boxes = []
-            for idx, row in df.iterrows():
-                image_id = str(row['image_id'])
-                #temp_path = os.path.join(gt_path, (image_id) + '.txt')
-                if str(row['category_id']) == str(key):
-                    tmp_class_name, confidence = value, row['score']
-                    left, top, width, height = str(row["bbox"][0]), str(row["bbox"][1]), str(row["bbox"][2]), str(row["bbox"][3])
-                    if tmp_class_name in det_counter_per_classes:
-                        det_counter_per_classes[tmp_class_name] +=1
-                    else:
-                        det_counter_per_classes[tmp_class_name] = 1
-                    bbox = left + " " + top + " " + width + " " + height
-                    bounding_boxes.append({"confidence": confidence, "file_id": image_id, "bbox": bbox})
-            bounding_boxes.sort(key=lambda x: float(x['confidence']), reverse = True)
-            with open(temp_file_path + '/' + value + '_dr.json', 'w') as outfile:
-                json.dump(bounding_boxes, outfile)
-
-    return det_counter_per_classes
-
 def dr_json(dr_json_path, class_dict):
     det_counter_per_classes = {}
     dr_class = {}
@@ -439,13 +274,12 @@ def dr_json(dr_json_path, class_dict):
         json_annotations = json_data["annotations"]
         json_annotations = sorted(json_annotations, key=lambda json_annotations:(json_annotations['category_id']))
         df = pd.DataFrame(json_annotations)
-        print(class_dict)
         for idx, row in df.iterrows():
             image_id = str(row['image_id'])
             try:
                 class_name = class_dict[str(row["category_id"])]
             except KeyError or ValueError:
-                print("No matching class name in gt. This category id  not exist in gt: ", row["category_id"])
+                error("No matching class name in gt. This category id  not exist in gt: " + row["category_id"])
             confidence = row['score']
             left, top, width, height = str(row["bbox"][0]), str(row["bbox"][1]), str(row["bbox"][2]), str(row["bbox"][3])
             if class_name in det_counter_per_classes:
@@ -480,14 +314,18 @@ def compute_pre_rec(fp, tp, class_name, gt_counter_per_class):
 
     return rec, prec
 
-def calculate_ap(results_file_path, gt_classes, opt, gt_counter_per_class, dr, gt):
+
+def calculate_ap(results_file_path, plot_result_path, gt_classes, opt, gt_counter_per_class, dr, gt):
     specific_iou_flagged = False
     if opt.set_class_iou is not None:
         specific_iou_flagged = True
     sum_AP = 0.0
     ap_dictionary = {}
-    with open(results_file_path + "/results.txt", 'w') as results_file:
+
+    with open(results_file_path, 'w') as results_file:
         results_file.write("# AP and precision/recall per class \n")
+        if opt.see_pre_rec is False:
+            results_file.write(" ==> opt.see_pre_rec is false\n")
         count_true_positives = {}
         texts = ""
         for class_index, class_name in enumerate(gt_classes):
@@ -501,6 +339,8 @@ def calculate_ap(results_file_path, gt_classes, opt, gt_counter_per_class, dr, g
                 ovmax = -1
                 gt_match = -1
                 bb = [float(x) for x in detection["bbox"].split()]
+                if detection["confidence"] < opt.confidence_threshold:
+                    continue
                 for idx, obj in enumerate(gt_data):
                     if not obj["file_id"] == file_id:
                         continue
@@ -540,16 +380,34 @@ def calculate_ap(results_file_path, gt_classes, opt, gt_counter_per_class, dr, g
                     tp.append(0)
             rec, prec = compute_pre_rec(fp, tp, class_name, gt_counter_per_class)
             if opt.no_interpolation:
-                ap, mrec, mprec = voc_ap(rec[:], prec[:])
+                ap, mrec, mpre = voc_ap(rec[:], prec[:])
             else:
+                ap, mrec, mpre = voc_ap(rec[:], prec[:])
                 ap = calc_inter_ap(opt, rec[:], prec[:])
             sum_AP += ap
             text = "{0:.2f}%".format(
                 ap * 100) + " = " + class_name + " AP "  # class_name + " AP = {0:.2f}%".format(ap*100)
             rounded_prec = ['%.2f' % elem for elem in prec]
             rounded_rec = ['%.2f' % elem for elem in rec]
-            results_file.write(
-                text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n\n")
+            if opt.see_pre_rec:
+                results_file.write(
+                    text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n\n")
+
+            if opt.draw_plot:
+                plt.plot(rec, prec, '.')
+                # add a new penultimate point to the list (mrec[-2], 0.0)
+                # since the last line segment (and respective area) do not affect the AP value
+                area_under_curve_x = mrec[:-1] + [mrec[-2]] + [mrec[-1]]
+                area_under_curve_y = mpre[:-1] + [0.0] + [mpre[-1]]
+                plt.fill_between(area_under_curve_x, 0, area_under_curve_y, alpha=0.2, edgecolor='r')
+
+                # set window title
+                fig = plt.gcf()  # gcf - get current figure
+                fig.canvas.set_window_title('AP ' + class_name)
+
+                # save the plot
+                fig.savefig(os.path.join(plot_result_path, class_name +".png"))
+                plt.cla()  # clear axes for next plot
 
             if not opt.quiet:
                 print(text)
@@ -560,203 +418,7 @@ def calculate_ap(results_file_path, gt_classes, opt, gt_counter_per_class, dr, g
         mAP = sum_AP / len(gt_classes)
         text = "mAP = {0:.2f}%\n".format(mAP * 100)
         results_file.write(texts)
-        print(text)
-    return count_true_positives
-
-
-def calculate_ap_old_latest(temp_file_path, results_file_path, gt_classes, opt, gt_counter_per_class, dr):
-    specific_iou_flagged = False
-    if opt.set_class_iou is not None:
-        specific_iou_flagged = True
-    sum_AP = 0.0
-    ap_dictionary = {}
-    with open(results_file_path + "/results.txt", 'w') as results_file:
-        results_file.write("# AP and precision/recall per class \n")
-        count_true_positives = {}
-        start = time.time()
-        for class_index, class_name in enumerate(gt_classes):
-            count_true_positives[class_name] = 0
-            dr_data = dr[class_name]
-            tp = []
-            fp = []
-            gt_file = temp_file_path + "/" + class_name + "_ground_truth.json"
-            ground_truth_data = json.load((open(gt_file)))
-            for idx, detection in enumerate(dr_data):
-                file_id = detection["file_id"]
-                ovmax = -1
-                gt_match = -1
-                bb = [float(x) for x in detection["bbox"].split()]
-                for obj in ground_truth_data:
-                    if not obj["file_id"] == file_id:
-                        continue
-                    bbgt = [float(x) for x in obj["bbox"].split()]
-                    bi = [max(bb[0], bbgt[0]), max(bb[1], bbgt[1]), min(bb[0] + bb[2], bbgt[0] + bbgt[2]),
-                          min(bb[1] + bb[3], bbgt[1] + bbgt[3])]
-                    iw = bi[2] - bi[0] + 1
-                    ih = bi[3] - bi[1] + 1
-                    if iw > 0 and ih > 0:
-                        # ua = compute overlap (IoU) = area of intersection/ area of union
-                        ua = ((bb[2] + 1) * (bb[3] + 1) + (bbgt[2] + 1) * (bbgt[3] + 1)) - iw * ih
-                        IoU = iw * ih / ua
-                        if IoU > ovmax:
-                            ovmax = IoU
-                            gt_match = obj
-
-                iou_threshold = opt.iou_threshold
-                if specific_iou_flagged:
-                    specific_iou_classes = opt.set_class_iou[::2]
-                    iou_list = opt.set_class_iou[1::2]
-                    if class_name in specific_iou_classes:
-                        index = specific_iou_classes.index(class_name)
-                        iou_threshold = float(iou_list[index])
-                if ovmax >= iou_threshold:
-                    if not bool(gt_match["used"]):
-                        tp.append(1)
-                        fp.append(0)
-                        gt_match["used"] = True
-                        count_true_positives[class_name] +=1
-                        obj = gt_match
-                    else:
-                        fp.append(1)
-                        tp.append(0)
-                else:
-                    fp.append(1)
-                    tp.append(0)
-            rec, prec = compute_pre_rec(fp, tp, class_name, gt_counter_per_class)
-            if opt.no_interpolation:
-                ap, mrec, mprec = voc_ap(rec[:], prec[:])
-            else:
-                ap = calc_inter_ap(opt, rec[:], prec[:])
-            sum_AP += ap
-            text = "{0:.2f}%".format(
-                ap * 100) + " = " + class_name + " AP "  # class_name + " AP = {0:.2f}%".format(ap*100)
-            rounded_prec = ['%.2f' % elem for elem in prec]
-            rounded_rec = ['%.2f' % elem for elem in rec]
-            results_file.write(
-                text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n\n")
-
-            if not opt.quiet:
-                print(text)
-            ap_dictionary[class_name] = ap
-        finish = time.time()
-        print("for 문:", finish - start)
-        results_file.write("\n# mAP of all classes\n")
-        mAP = sum_AP / len(gt_classes)
-        text = "mAP = {0:.2f}%".format(mAP * 100)
-        results_file.write(text + "\n")
-        print(text)
-    return count_true_positives
-
-
-def calculate_ap_old(TEMP_FILE_PATH, results_files_path, gt_classes, opt,
-                 gt_counter_per_class, counter_images_per_class):
-
-    specific_iou_flagged = False
-    if opt.set_class_iou is not None:
-        specific_iou_flagged = True
-
-    sum_AP = 0.0
-    ap_dictionary = {}
-    # lamr_dictionary = {}
-    # open file to store the results
-    with open(results_files_path + "/results.txt", 'w') as results_file:
-        results_file.write("# AP and precision/recall per class \n")
-        count_true_positives = {}
-        for class_index, class_name in enumerate(gt_classes):
-            count_true_positives[class_name] = 0
-            '''
-            load detection results of that class
-            '''
-            dr_file = TEMP_FILE_PATH + "/" + class_name + "_dr.json"
-            dr_data = json.load(open(dr_file))
-
-            '''
-            Assign detection results to gt objects
-            '''
-            nd = len(dr_data)
-            tp = [0] * nd  # nd 사이즈만큼 zero array 생성
-            fp = [0] * nd
-            start = time.time()
-            for idx, detection in enumerate(dr_data):
-                file_id = detection["file_id"]
-                # assign detection results to gt object if any
-                # open gt with that file id
-                gt_file = TEMP_FILE_PATH + "/" + file_id + "_ground_truth.json"
-                ground_truth_data = json.load(open(gt_file))
-                ovmax = -1
-                gt_match = -1
-                # load detected object bounding-box
-                bb = [float(x) for x in detection["bbox"].split()]
-                confidence = float(detection["confidence"])
-
-                # ==> confidence 부분 다시 생각해봐야함
-                # if confidence < opt.confidence_threshold:
-                #    fp[idx] = 1
-                #    continue
-                for obj in ground_truth_data:
-                    # look for class_name match
-                    if obj["class_name"] == class_name:
-                        bbgt = [float(x) for x in obj["bbox"].split()]
-                        # 순서: left top right bottom
-                        # bi = detection과 gt 중 교집합 box의 좌표
-                        bi = [max(bb[0], bbgt[0]), max(bb[1], bbgt[1]), min(bb[0] + bb[2], bbgt[0]+bbgt[2]),
-                              min(bb[1] + bb[3], bbgt[1] + bbgt[3])]
-                        iw = bi[2] - bi[0] + 1
-                        ih = bi[3] - bi[1] + 1
-                        if iw > 0 and ih > 0:
-                            # ua = compute overlap (IoU) = area of intersection/ area of union
-                            ua = ((bb[2] + 1) * (bb[3] + 1) + (bbgt[2] + 1) * (bbgt[3] + 1)) - iw*ih
-                            IoU = iw * ih / ua
-                            if IoU > ovmax:
-                                ovmax = IoU
-                                gt_match = obj
-                # assign detection as true positive/false positive
-
-                # set minimum overlap threshold
-                IoU_threshold = opt.iou_threshold
-                if specific_iou_flagged:
-                    specific_iou_classes = opt.set_class_iou[::2]
-                    iou_list = opt.set_class_iou[1::2]
-                    if class_name in specific_iou_classes:
-                        index = specific_iou_classes.index(class_name)
-                        IoU_threshold = float(iou_list[index])
-                if ovmax >= IoU_threshold:
-                    if not bool(gt_match["used"]):
-                        # true positive
-                        tp[idx] = 1
-                        gt_match["used"] = True
-                        count_true_positives[class_name] += 1
-                        # update json file
-                        with open(gt_file, 'w') as f:
-                            f.write(json.dumps(ground_truth_data))
-                    else:
-                        # false positive (multiple detection)
-                        fp[idx] = 1
-                else:
-                    fp[idx] = 1
-            finish = time.time()
-            print("for 문:" , finish - start)
-            rec, prec = compute_pre_rec(fp, tp, class_name, gt_counter_per_class)
-            if opt.no_interpolation:
-                ap, mrec, mprec = voc_ap(rec[:], prec[:])
-            else:
-                ap = calc_inter_ap(opt, rec[:], prec[:])
-            # ap, mrec, mprec = voc_ap(rec[:], prec[:])
-            sum_AP += ap
-            text = "{0:.2f}%".format(
-                ap * 100) + " = " + class_name + " AP "  # class_name + " AP = {0:.2f}%".format(ap*100)
-            rounded_prec = ['%.2f' % elem for elem in prec]
-            rounded_rec = ['%.2f' % elem for elem in rec]
-            results_file.write(text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n\n")
-
-            if not opt.quiet:
-                print(text)
-            ap_dictionary[class_name] = ap
-
-        results_file.write("\n# mAP of all classes\n")
-        mAP = sum_AP / len(gt_classes)
-        text = "mAP = {0:.2f}%".format(mAP*100)
-        results_file.write(text + "\n")
+        results_file.write(text)
         print(text)
     return count_true_positives
 
