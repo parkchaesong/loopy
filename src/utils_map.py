@@ -1,3 +1,5 @@
+"""the latest version"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 import sys, os
@@ -7,7 +9,7 @@ import option
 
 opt = option.options
 
-
+"""path위치 등 txt config를 파일에 저장해 주는 함수"""
 def print_configuration(result, conf):
     with open(result, 'a') as result:
         result.write("\n## Show Configuration ##")
@@ -19,7 +21,7 @@ def print_configuration(result, conf):
                      ". Detection results under threshold are not counted.\n")
     return
 
-
+"""interpolation함수/recall이 증가함에 따라interpolation구간 별 precision의 최대값으로 precision을 정하는 함수"""
 def calc_interpolated_prec(desired_rec, latest_pre, rec, prec):
     recall_precision = np.array([rec, prec])
     recall_precision = recall_precision.T
@@ -34,7 +36,7 @@ def calc_interpolated_prec(desired_rec, latest_pre, rec, prec):
         inter_precision = latest_pre
     return inter_precision, latest_pre
 
-
+"""interpolation함수/ 최종적인 recall, precision list를 만든다."""
 def calc_inter_ap(opt, rec, prec):
     inter_precisions = []
     latest_pre = 0
@@ -73,18 +75,8 @@ Calculate the AP given the recall and precision array
     2) Compute the AP as the Area Under this curve by numerical integration   ###not interpolated 
 """
 
-
+"""ap, precision, recall을 리턴하는 함수"""
 def voc_ap(rec, prec):
-    """official matlab code VOC2012
-    mrec = [0; rec;1];
-    mpre = [0; prec; 0];
-
-    for i=numel(mpre) - 1: -1: 1
-        mpre(i)=max(mpre(i),mpre(i+1));
-    end
-    i = find(mrec(2:end) ~= mrec(1:end-1)) + 1;
-    ap = sum((mrec(i) - mrec(i-1)).*mpre(i));
-        """
 
     rec.insert(0, 0.0)  # insert 0.0 at beginning of list
     rec.append(1.0)  # insert 1.0 at end of list
@@ -93,24 +85,10 @@ def voc_ap(rec, prec):
     prec.append(0.0)  # insert 0.0 at end of list
     mpre = prec[:]
 
-    """
-     This part makes the precision monotonically decreasing
-        (goes from the end to the beginning)
-        matlab: for i=numel(mpre)-1:-1:1
-                    mpre(i)=max(mpre(i),mpre(i+1));
-    """
-
-    # matlab indexes start in 1 but python in 0, so I have to do:
-    #     range(start=(len(mpre) - 2), end=0, step=-1)
-    # also the python function range excludes the end, resulting in:
-    #     range(start=(len(mpre) - 2), end=-1, step=-1)
 
     for i in range(len(mpre)-2, -1, -1):
         mpre[i] = max(mpre[i], mpre[i+1])  # 항상 i+1 의 값보다 i 가 크다 ==> 항상 감소하는 curve됨
-    """
-     This part creates a list of indexes where the recall changes
-        matlab: i=find(mrec(2:end)~=mrec(1:end-1))+1;
-    """
+
     i_list = []
     for i in range(1, len(mrec)):
         if mrec[i] != mrec[i-1]:
@@ -126,35 +104,16 @@ convert the lines of a file to a list
 """
 
 
-def file_lines_to_list(path):
-    # open txt file lines to a list
-    with open(path) as f:
-        content = f.readlines()
-    # remove whitespace characters like '\n' at the end of each line
-    content = [x.strip() for x in content]
-    return content
+# def file_lines_to_list(path):
+#     # open txt file lines to a list
+#     with open(path) as f:
+#         content = f.readlines()
+#     # remove whitespace characters like '\n' at the end of each line
+#     content = [x.strip() for x in content]
+#     return content
 
 
-
-"""
-Plot - adjust axes
-"""
-
-'''
-def adjust_axes(r, t, fig, axes):
-    # get text width for re-scaling
-    bb = t.get_window_extent(rendered=r)
-    text_width_inches = bb.width / fig.dpi
-    # get axis width in inches
-    current_fig_width = fig.get_figwidth()
-    new_fig_width = current_fig_width + text_width_inches
-    propotion = new_fig_width / current_fig_width
-
-    # get axis limit
-    x_lim = axes.get_xlim()
-    axes.set_xlim([x_lim[0], x_lim[1]*propotion])
-'''
-
+"""gt의 데이터를 scale 별로 나누는 함수"""
 def area_check(area, size_threshold):
     if area <= (size_threshold) ** 2:
         size_name = "small"
@@ -166,7 +125,7 @@ def area_check(area, size_threshold):
         ValueError("Check the area")
     return size_name
 
-
+"""gt의 데이터를 딕셔너리 형으로 정리하는 함수"""
 def get_gt_match(gt_path, class_dict):
     gt_counter_per_classes = {}
     counter_images_per_classes = {}
@@ -209,14 +168,6 @@ def get_gt_match(gt_path, class_dict):
             else:
                 gt_counter_per_sizes[size_name] = 1
 
-            if class_name not in already_seen_classes:
-                # 하나의 image 안에서 각 클래스가 몇번 나왔는지 계산
-                if class_name in counter_images_per_classes:
-                    counter_images_per_classes[class_name] += 1
-                else:
-                    # if class did not exist yet
-                    counter_images_per_classes[class_name] = 1
-                already_seen_classes.append(class_name)
 
             if size_name not in already_seen_sizes:
                 if size_name in counter_images_per_sizes:
@@ -228,9 +179,9 @@ def get_gt_match(gt_path, class_dict):
             gt_class[class_name].append({"file_id": image_id, "class_name": class_name, "area": area,
                                          "size_name": size_name, "bbox": bbox, "used": False, "size_used": False})
 
-    return gt_counter_per_classes, counter_images_per_classes, gt_counter_per_sizes, counter_images_per_sizes, gt_class
+    return gt_counter_per_classes, gt_counter_per_sizes, counter_images_per_sizes, gt_class
 
-
+"""class 별로 IoU를 다르게 할 시에만 사용하는 함수다."""
 def check_format_class_iou(opt, gt_classes):
     n_args = len(opt.set_class_iou)
     error_msg = \
@@ -249,7 +200,7 @@ def check_format_class_iou(opt, gt_classes):
         if not is_float_between_0_and_1(num):
             error('Error, IOU must be between 0 and 1. Flag usage:' + error_msg)
 
-
+"""class_dict를 만드는 함수/ class_dict에는 category_id와 class_name이 매칭되어 있다."""
 def make_gt_list(gt_json_path):
     class_dict = dict()
     with open(gt_json_path) as json_file:
@@ -263,7 +214,7 @@ def make_gt_list(gt_json_path):
             class_dict[category_id] = category_name
     return class_dict
 
-
+"""detection result를 딕셔너리 형으로 정리하는 함수다."""
 def dr_json(dr_json_path, class_dict):
     det_counter_per_classes = {}
     dr_class = {}
@@ -295,6 +246,8 @@ def dr_json(dr_json_path, class_dict):
 
     return det_counter_per_classes, dr_class
 
+
+"""precision, recall,tp,fp를 전의 값들을 누적해서 리스트를 만든다."""
 def compute_pre_rec(fp, tp, class_name, gt_counter_per_class):
     cumsum = 0
     for idx, val in enumerate(fp):
@@ -314,13 +267,15 @@ def compute_pre_rec(fp, tp, class_name, gt_counter_per_class):
 
     return rec, prec
 
-
+"""IoU, confidence threshold에 따라 ap를 구하는 부분으로, plot도 포함한다."""
 def calculate_ap(results_file_path, plot_result_path, gt_classes, opt, gt_counter_per_class, dr, gt):
     specific_iou_flagged = False
     if opt.set_class_iou is not None:
         specific_iou_flagged = True
     sum_AP = 0.0
     ap_dictionary = {}
+    precision_dict = {}
+    recall_dict = {}
 
     with open(results_file_path, 'w') as results_file:
         results_file.write("# AP and precision/recall per class \n")
@@ -385,10 +340,14 @@ def calculate_ap(results_file_path, plot_result_path, gt_classes, opt, gt_counte
                 ap, mrec, mpre = voc_ap(rec[:], prec[:])
                 ap = calc_inter_ap(opt, rec[:], prec[:])
             sum_AP += ap
+
+            # print(mrec)
+
             text = "{0:.2f}%".format(
                 ap * 100) + " = " + class_name + " AP "  # class_name + " AP = {0:.2f}%".format(ap*100)
-            rounded_prec = ['%.2f' % elem for elem in prec]
-            rounded_rec = ['%.2f' % elem for elem in rec]
+            rounded_prec = ["%.2f" % elem for elem in prec]
+            rounded_rec = ["%.2f" % elem for elem in rec]
+
             if opt.see_pre_rec:
                 results_file.write(
                     text + "\n Precision: " + str(rounded_prec) + "\n Recall :" + str(rounded_rec) + "\n\n")
@@ -411,7 +370,13 @@ def calculate_ap(results_file_path, plot_result_path, gt_classes, opt, gt_counte
 
             if not opt.quiet:
                 print(text)
+
             ap_dictionary[class_name] = ap
+            precision_dict[class_name] = str(prec)
+            recall_dict[class_name] = str(rec)
+
+            # print(precision_dict[class_name])
+
             texts = texts + class_name + " ap: "+ "{0:.2f}%".format(ap*100)  +"\n"
 
         results_file.write("\n# mAP of all classes\n")
@@ -420,7 +385,4 @@ def calculate_ap(results_file_path, plot_result_path, gt_classes, opt, gt_counte
         results_file.write(texts)
         results_file.write(text)
         print(text)
-    return count_true_positives
-
-
-
+    return count_true_positives, mAP, ap_dictionary, precision_dict, recall_dict
